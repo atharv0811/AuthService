@@ -44,7 +44,7 @@ CREATE TABLE "Role" (
     "project_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT NOT NULL,
-    "is_system" BOOLEAN NOT NULL DEFAULT false,
+    "is_default" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 

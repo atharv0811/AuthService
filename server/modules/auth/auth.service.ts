@@ -2,6 +2,7 @@ import { compare, hash } from "bcryptjs";
 import { prisma } from "../../config/db";
 import { RegisterUserData } from "./auth.types"
 import { validateRegisterUserData } from "./auth.validator";
+import ApiError from "../../utils/ApiError";
 
 // Register user service
 export const registerUserService = async (userData: RegisterUserData) => {
@@ -20,30 +21,23 @@ export const registerUserService = async (userData: RegisterUserData) => {
     })
 
     if (!project) {
-        throw {
-            statusCode: 404,
-            message: "Project not found"
-        }
+        throw new ApiError(404, "Project not found");
     }
 
     if (!project.is_active) {
-        throw {
-            statusCode: 400,
-            message: "Project is not active"
-        }
+        throw new ApiError(400, "Project is not active");
     }
 
     const isClientSecretValid = await compare(client_secret, project.client_secret_hash);
 
     if (!isClientSecretValid) {
-        throw {
-            statusCode: 401,
-            message: "Invalid client secret"
-        }
+        throw new ApiError(401, "Invalid client secret");
     }
 
     // Transaction Starts
     return await prisma.$transaction(async (tx) => {
+        let projectUser;
+
         // Check if user already exists
         let user = await tx.user.findUnique({
             where: {
@@ -73,21 +67,16 @@ export const registerUserService = async (userData: RegisterUserData) => {
 
         if (existingProjectUser) {
             if (existingProjectUser.status === "active") {
-                throw {
-                    statusCode: 409,
-                    message: "User is already registered in the project"
-                }
+                throw new ApiError(409, "User is already registered in the project");
             }
 
             if (existingProjectUser.status === "suspended") {
-                throw {
-                    statusCode: 403,
-                    message: "User is suspended in the project"
-                }
+
+                throw new ApiError(403, "User is suspended in the project");
             }
 
             if (existingProjectUser.status === "invited") {
-                await tx.projectUser.update({
+                projectUser = await tx.projectUser.update({
                     where: {
                         project_id_user_id: {
                             project_id: project.id,
@@ -101,7 +90,7 @@ export const registerUserService = async (userData: RegisterUserData) => {
                 })
             }
         } else {
-            await tx.projectUser.create({
+            projectUser = await tx.projectUser.create({
                 data: {
                     project_id: project.id,
                     user_id: user.id,
@@ -112,6 +101,16 @@ export const registerUserService = async (userData: RegisterUserData) => {
         }
 
         // Assign default role to the user
+        const memberRole = await tx.role.findFirst({
+            where: {
+                project_id: project.id,
+                name: "MEMBER"
+            }
+        })
+
+        if (!memberRole) {
+            throw new ApiError(404, "Default MEMBER role not configured for project");
+        }
 
         // Return response
         return {

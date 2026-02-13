@@ -2,6 +2,7 @@ import { hash } from "bcryptjs";
 import { prisma } from "../../config/db";
 import { CreateProjectData } from "./projects.types";
 import { v4 as uuidv4 } from "uuid";
+import ApiError from "../../utils/ApiError";
 
 export const createProjectService = async (data: CreateProjectData, userId: number) => {
     let { name } = data;
@@ -9,17 +10,11 @@ export const createProjectService = async (data: CreateProjectData, userId: numb
     name = name.trim();
 
     if (!name) {
-        throw {
-            statusCode: 400,
-            message: "Project name is required",
-        };
+        throw new ApiError(400, "Project name is required");
     }
 
     if (name.length < 3) {
-        throw {
-            statusCode: 400,
-            message: "Project name must be at least 3 characters long",
-        };
+        throw new ApiError(400, "Project name must be at least 3 characters long");
     }
 
     const isProjectNameExist = await prisma.project.findUnique({
@@ -29,10 +24,7 @@ export const createProjectService = async (data: CreateProjectData, userId: numb
     });
 
     if (isProjectNameExist) {
-        throw {
-            statusCode: 400,
-            message: "Project name already exist",
-        };
+        throw new ApiError(400, "Project name already exist");
     }
 
     const clientId = uuidv4();
@@ -73,10 +65,7 @@ export const createProjectService = async (data: CreateProjectData, userId: numb
         const memberRole = roles.find((role) => role.name === "MEMBER");
 
         if (!ownerRole || !adminRole || !memberRole) {
-            throw {
-                statusCode: 500,
-                message: "Default roles not found",
-            };
+            throw new ApiError(500, "Default roles not found");
         }
 
         await tx.userRole.create({

@@ -1,6 +1,6 @@
 import { compare, hash } from "bcryptjs";
 import { prisma } from "../../config/db";
-import { RegisterUserData } from "./auth.types"
+import { RegisterUserData, LoginUserData } from "./auth.types"
 import { validateRegisterUserData } from "./auth.validator";
 import ApiError from "../../utils/ApiError";
 
@@ -125,7 +125,60 @@ export const registerUserService = async (userData: RegisterUserData) => {
     })
 }
 
-export const loginUser = () => { }
+// Login user service
+export const loginUser = async (userData: LoginUserData) => {
+    let { client_id, client_secret, email, password } = userData;
+
+    email = email.toLowerCase().trim();
+
+    const project = await prisma.project.findUnique({
+        where: {
+            client_id
+        }
+    })
+
+    if (!project) {
+        throw new ApiError(404, "Project not found");
+    }
+
+    if (!project.is_active) {
+        throw new ApiError(400, "Project is not active");
+    }
+
+    // Validate client secret
+    const isClientSecretValid = await compare(client_secret, project.client_secret_hash);
+
+    if (!isClientSecretValid) {
+        throw new ApiError(401, "Invalid client secret");
+    }
+
+    // Find user by email
+    const user = await prisma.user.findUnique({
+        where: {
+            email
+        }
+    })
+
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+
+    const isPasswordValid = await compare(password, user.password_hash);
+
+    if (!isPasswordValid) {
+        throw new ApiError(401, "Invalid credentials");
+    }
+
+    // Check membership
+    const projectUser = await prisma.projectUser.findUnique({
+        where: {
+            project_id_user_id: {
+                project_id: project.id,
+                user_id: user.id,
+            }
+        }
+    })
+}
 
 export const refreshSession = () => { }
 

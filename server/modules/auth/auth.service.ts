@@ -3,6 +3,7 @@ import { prisma } from "../../config/db";
 import { RegisterUserData, LoginUserData } from "./auth.types"
 import { validateRegisterUserData } from "./auth.validator";
 import ApiError from "../../utils/ApiError";
+import { generateAccessToken, generateRefreshToken } from "./auth.helper";
 
 // Register user service
 export const registerUserService = async (userData: RegisterUserData) => {
@@ -126,7 +127,7 @@ export const registerUserService = async (userData: RegisterUserData) => {
 }
 
 // Login user service
-export const loginUser = async (userData: LoginUserData) => {
+export const loginUserService = async (userData: LoginUserData, userAgent?: string, ipAddress?: string) => {
     let { client_id, client_secret, email, password } = userData;
 
     email = email.toLowerCase().trim();
@@ -176,6 +177,66 @@ export const loginUser = async (userData: LoginUserData) => {
                 project_id: project.id,
                 user_id: user.id,
             }
+        }
+    })
+
+    if (!projectUser || projectUser.status !== "active") {
+        throw new ApiError(403, "User is not active in this project");
+    }
+
+    const userRoles = await prisma.userRole.findMany({
+        where: {
+            project_user_id: projectUser.id
+        },
+        include: {
+            role: true
+        }
+    })
+
+    if (!userRoles.length) {
+        throw new ApiError(403, "User has no assigned roles");
+    }
+
+    return await prisma.$transaction(async (tx) => {
+
+        // Create session first (temporary token)
+        const session = await tx.userSession.create({
+            data: {
+                user_id: user.id,
+                project_id: project.id,
+                refresh_token: "temp", // placeholder
+                user_agent: userAgent,
+                ip_address: ipAddress,
+                expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            }
+        })
+
+        const accessToken = generateAccessToken({
+            sub: user.id,
+            pid: project.id,
+            sid: session.id
+        })
+
+        const refreshToken = generateRefreshToken({
+            sub: user.id,
+            pid: project.id,
+            sid: session.id
+        })
+
+        // Update session with refresh token
+        await tx.userSession.update({
+            where: {
+                id: session.id
+            },
+            data: {
+                refresh_token: refreshToken,
+            }
+        })
+
+        // Return response
+        return {
+            access_token: accessToken,
+            refresh_token: refreshToken,
         }
     })
 }
